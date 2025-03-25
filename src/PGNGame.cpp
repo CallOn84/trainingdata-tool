@@ -9,7 +9,7 @@
 #include <vector>
 
 float convert_sf_score_to_win_probability(float score) {
-  return 2 / (1 + exp(-0.4 * score)) - 1;
+  return 2.0 / (1.0 + exp(-0.4 * score)) - 1.0;
 }
 
 bool extract_lichess_comment_score(const char* comment, float& Q) {
@@ -67,8 +67,8 @@ PGNGame::PGNGame(pgn_t* pgn) {
   }
 }
 
-std::vector<lczero::V4TrainingData> PGNGame::getChunks(Options options) const {
-  std::vector<lczero::V4TrainingData> chunks;
+std::vector<lczero::V6TrainingData> PGNGame::getChunks(Options options) const {
+  std::vector<lczero::V6TrainingData> chunks;
   lczero::ChessBoard starting_board;
   std::string starting_fen =
       std::strlen(this->fen) > 0 ? this->fen : lczero::ChessBoard::kStartposFen;
@@ -172,7 +172,7 @@ std::vector<lczero::V4TrainingData> PGNGame::getChunks(Options options) const {
 
     if (!(bad_move && options.lichess_mode)) {
       // Generate training data
-      lczero::V4TrainingData chunk = get_v4_training_data(
+      lczero::V6TrainingData chunk = get_v6_training_data(
           game_result, position_history, lc0_move, legal_moves, Q);
       chunks.push_back(chunk);
       if (options.verbose) {

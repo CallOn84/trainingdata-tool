@@ -12,7 +12,7 @@
 #include "TrainingDataWriter.h"
 
 size_t max_files_per_directory = 10000;
-int64_t max_games_to_convert = 10000000;
+int64_t max_games_to_convert = 500000000;
 size_t chunks_per_file = 4096;
 size_t dedup_uniq_buffersize = 50000;
 float dedup_q_ratio = 1.0f;
@@ -34,13 +34,14 @@ void convert_games(const std::string &pgn_file_name, Options options) {
   TrainingDataWriter writer(max_files_per_directory, chunks_per_file);
   while (pgn_next_game(pgn) && game_id < max_games_to_convert) {
     PGNGame game(pgn);
-    writer.EnqueueChunks(game.getChunks(options));
+    writer.EnqueueChunks(
+        game.getChunks(options),
+        true);  // Write chunks immediately for each game and finalize
     game_id++;
     if (game_id % 1000 == 0) {
       std::cout << game_id << " games written." << std::endl;
     }
   }
-  writer.Finalize();
   std::cout << "Finished writing " << game_id << " games." << std::endl;
   pgn_close(pgn);
 }
@@ -89,7 +90,8 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  TrainingDataWriter writer(max_files_per_directory, chunks_per_file, "deduped-");
+  TrainingDataWriter writer(max_files_per_directory, chunks_per_file,
+                            "deduped-");
   for (size_t idx = 1; idx < argc; ++idx) {
     if (deduplication_mode) {
       if (!directory_exists(argv[idx])) continue;

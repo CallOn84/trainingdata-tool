@@ -5,13 +5,13 @@
 #include <vector>
 #include <zlib.h>
 
-#include "neural/writer.h"
+#include "trainingdata/writer.h"
 
 class TrainingDataReader {
 public:
   TrainingDataReader(const std::string &in_directory);
   virtual ~TrainingDataReader();
-  std::optional<lczero::V4TrainingData> ReadChunk();
+  std::optional<lczero::V6TrainingData> ReadChunk();
 
 private:
   gzFile getCurrentFile();

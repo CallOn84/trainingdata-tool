@@ -8,26 +8,48 @@ TrainingDataWriter::TrainingDataWriter(size_t max_files_per_directory,
     : files_written(0),
       max_files_per_directory(max_files_per_directory),
       chunks_per_file(chunks_per_file),
-      dir_prefix(std::move(dir_prefix)){};
+      dir_prefix(std::move(dir_prefix)) {}
 
 void TrainingDataWriter::EnqueueChunks(
-    const std::vector<lczero::V4TrainingData> &chunks) {
-  for (auto &chunk : chunks) {
+    const std::vector<lczero::V6TrainingData>& chunks) {
+  for (const auto& chunk : chunks) {
     chunks_queue.push(chunk);
   }
   WriteQueuedChunks(chunks_per_file);
 }
 
 void TrainingDataWriter::EnqueueChunks(
-    const std::unordered_map<lczero::V4TrainingData, size_t> &chunks) {
-  for (auto chunk : chunks) {
-    chunks_queue.push(chunk.first);
-    WriteQueuedChunks(chunks_per_file);
+    const std::vector<lczero::V6TrainingData>& chunks, bool finalize) {
+  for (const auto& chunk : chunks) {
+    chunks_queue.push(chunk);
   }
+  WriteQueuedChunks(chunks_per_file, finalize);
+}
+
+void TrainingDataWriter::EnqueueChunks(
+    const std::unordered_map<lczero::V6TrainingData, size_t>& chunks) {
+  for (const auto& chunk : chunks) {
+    chunks_queue.push(chunk.first);
+  }
+  WriteQueuedChunks(chunks_per_file);
+}
+
+void TrainingDataWriter::EnqueueChunks(
+    const std::unordered_map<lczero::V6TrainingData, size_t>& chunks,
+    bool finalize) {
+  for (const auto& chunk : chunks) {
+    chunks_queue.push(chunk.first);
+  }
+  WriteQueuedChunks(chunks_per_file, finalize);
 }
 
 void TrainingDataWriter::WriteQueuedChunks(size_t min_chunks) {
-  while (chunks_queue.size() > min_chunks) {
+  WriteQueuedChunks(min_chunks, false);
+}
+
+void TrainingDataWriter::WriteQueuedChunks(size_t min_chunks, bool finalize) {
+  while ((chunks_queue.size() > min_chunks || finalize) &&
+         !chunks_queue.empty()) {
     lczero::TrainingDataWriter writer(
         files_written,
         dir_prefix + std::to_string(files_written / max_files_per_directory));
@@ -37,7 +59,8 @@ void TrainingDataWriter::WriteQueuedChunks(size_t min_chunks) {
     }
     writer.Finalize();
     files_written++;
+    if (!finalize) break;
   }
 }
 
-void TrainingDataWriter::Finalize() { WriteQueuedChunks(0); }
+void TrainingDataWriter::Finalize() { WriteQueuedChunks(0, true); }
