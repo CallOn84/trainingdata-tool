@@ -1,5 +1,5 @@
 # trainingdata-tool
-Tool to generate [lc0](https://github.com/LeelaChessZero/lc0) training data. Useful for [Supervised Learning](https://github.com/dkappe/leela-chess-weights/wiki/Supervised-Learning) from PGN games.
+This is a work-in-progress, updated version of Daniel Uranga's trainingdata-tool. The tool is designed to generate lc0 training data; useful for supervised learning from a set of games from a PGN. The tool is being updated to the v6 training data format, but there is currently work being done to have it be updated to the v7 training data format.
 
 ## How to build
 
