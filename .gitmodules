@@ -1,9 +1,10 @@
-[submodule "lc0"]
-	path = lc0
-	url = https://github.com/DanielUranga/lc0.git
 [submodule "zlib"]
 	path = zlib
 	url = https://github.com/madler/zlib.git
 [submodule "polyglot"]
 	path = polyglot
 	url = https://github.com/DanielUranga/polyglot.git
+[submodule "lc0"]
+	path = lc0
+	url = https://github.com/CallOn84/lc0.git
+	branch = trainingdata-tool
