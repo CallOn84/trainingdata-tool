@@ -6,5 +6,5 @@
 	url = https://github.com/DanielUranga/polyglot.git
 [submodule "lc0"]
 	path = lc0
-	url = https://github.com/CallOn84/lc0.git
-	branch = trainingdata-tool
+	url = https://github.com/LeelaChessZero/lc0.git
+	branch = master

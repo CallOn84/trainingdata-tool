@@ -14,8 +14,8 @@ float convert_sf_score_to_win_probability(float score) {
 
 bool extract_lichess_comment_score(const char* comment, float& Q) {
   std::string s(comment);
-  static std::regex rgx("\\[%eval (-?\\d+(\\.\\d+)?)\\]");
-  static std::regex rgx2("\\[%eval #(-?\\d+)\\]");
+  static std::regex rgx("[%eval (-?\\d+(\\.\\d+)?)]");
+  static std::regex rgx2("[%eval #(-?\\d+)]");
   std::smatch matches;
   if (std::regex_search(s, matches, rgx)) {
     Q = std::stof(matches[1].str());
@@ -28,30 +28,33 @@ bool extract_lichess_comment_score(const char* comment, float& Q) {
 }
 
 lczero::Move poly_move_to_lc0_move(move_t move, board_t* board) {
-  lczero::BoardSquare from(square_rank(move_from(move)),
-                           square_file(move_from(move)));
-  lczero::BoardSquare to(square_rank(move_to(move)),
-                         square_file(move_to(move)));
-  lczero::Move m(from, to);
+  lczero::Square from = lczero::Square::FromIdx(move_from(move));
+  lczero::Square to = lczero::Square::FromIdx(move_to(move));
+  lczero::Move m;
 
   if (move_is_promote(move)) {
-    lczero::Move::Promotion lookup[5] = {
-        lczero::Move::Promotion::None,   lczero::Move::Promotion::Knight,
-        lczero::Move::Promotion::Bishop, lczero::Move::Promotion::Rook,
-        lczero::Move::Promotion::Queen,
-    };
-    auto prom = lookup[move >> 12];
-    m.SetPromotion(prom);
+    lczero::PieceType prom_type = lczero::kKnight;
+    // Polyglot: 0=None, 1=Kn, 2=Bi, 3=Ro, 4=Qu
+    int promo = (move >> 12) & 7;
+    switch(promo) {
+      case 1: prom_type = lczero::kKnight; break;
+      case 2: prom_type = lczero::kBishop; break;
+      case 3: prom_type = lczero::kRook; break;
+      case 4: prom_type = lczero::kQueen; break;
+    }
+    m = lczero::Move::WhitePromotion(from, to, prom_type);
   } else if (move_is_castle(move, board)) {
-    bool is_short_castle =
-        square_file(move_from(move)) < square_file(move_to(move));
-    int file_to = is_short_castle ? 6 : 2;
-    m.SetTo(lczero::BoardSquare(square_rank(move_to(move)), file_to));
-    m.SetCastling();
+    // Determine rook file based on target square
+    // Kingside: to > from (e.g. g1 > e1) -> Rook on H (file 7)
+    // Queenside: to < from (e.g. c1 < e1) -> Rook on A (file 0)
+    lczero::File rook_file = (to.file().idx > from.file().idx) ? lczero::kFileH : lczero::kFileA;
+    m = lczero::Move::WhiteCastling(from.file(), rook_file);
+  } else {
+    m = lczero::Move::White(from, to);
   }
 
   if (colour_is_black(board->turn)) {
-    m.Mirror();
+    m.Flip();
   }
 
   return m;
@@ -67,8 +70,8 @@ PGNGame::PGNGame(pgn_t* pgn) {
   }
 }
 
-std::vector<lczero::V4TrainingData> PGNGame::getChunks(Options options) const {
-  std::vector<lczero::V4TrainingData> chunks;
+std::vector<lczero::V6TrainingData> PGNGame::getChunks(Options options) const {
+  std::vector<lczero::V6TrainingData> chunks;
   lczero::ChessBoard starting_board;
   std::string starting_fen =
       std::strlen(this->fen) > 0 ? this->fen : lczero::ChessBoard::kStartposFen;
@@ -86,7 +89,7 @@ std::vector<lczero::V4TrainingData> PGNGame::getChunks(Options options) const {
   }
 
   if (options.verbose) {
-    std::cout << "Started new game, starting FEN: \'" << starting_fen << "\'"
+    std::cout << "Started new game, starting FEN: '" << starting_fen << "'"
               << std::endl;
   }
 
@@ -143,7 +146,13 @@ std::vector<lczero::V4TrainingData> PGNGame::getChunks(Options options) const {
     bool found = false;
     auto legal_moves = position_history.Last().GetBoard().GenerateLegalMoves();
     for (auto legal : legal_moves) {
-      if (legal == lc0_move && legal.castling() == lc0_move.castling()) {
+      // In new lc0, castling moves are stored normalized?
+      // lc0 generates legal moves. If lc0_move matches one of them.
+      // Move::operator== checks exact match of data_.
+      // For castling, lc0 stores KingTakesRook.
+      // My construction used WhiteCastling which does exactly that.
+      // So simple equality check should work.
+      if (legal == lc0_move) {
         found = true;
         break;
       }
@@ -172,7 +181,7 @@ std::vector<lczero::V4TrainingData> PGNGame::getChunks(Options options) const {
 
     if (!(bad_move && options.lichess_mode)) {
       // Generate training data
-      lczero::V4TrainingData chunk = get_v4_training_data(
+      lczero::V6TrainingData chunk = get_v6_training_data(
           game_result, position_history, lc0_move, legal_moves, Q);
       chunks.push_back(chunk);
       if (options.verbose) {
@@ -191,7 +200,7 @@ std::vector<lczero::V4TrainingData> PGNGame::getChunks(Options options) const {
             result = "???";
             break;
         }
-        std::cout << "Write chunk: [" << lc0_move.as_string() << ", " << result
+        std::cout << "Write chunk: [" << lc0_move.ToString(false) << ", " << result
                   << ", " << Q << "]\n";
       }
     }

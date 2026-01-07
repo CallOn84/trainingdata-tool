@@ -3,7 +3,7 @@
 
 #include "neural/encoder.h"
 #include "neural/network.h"
-#include "neural/writer.h"
+#include "trainingdata/trainingdata_v6.h"
 #include "pgn.h"
 #include "polyglot_lib.h"
 #include "PGNMoveInfo.h"
@@ -21,7 +21,7 @@ struct PGNGame {
   std::vector<PGNMoveInfo> moves;
 
   explicit PGNGame(pgn_t* pgn);
-  std::vector<lczero::V4TrainingData> getChunks(Options options) const;
+  std::vector<lczero::V6TrainingData> getChunks(Options options) const;
 };
 
 #endif

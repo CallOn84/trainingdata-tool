@@ -1,72 +1,93 @@
 #include "trainingdata.h"
+#include "utils/bititer.h"
 
 #include <cstring>
+#include <algorithm>
 
-uint64_t resever_bits_in_bytes(uint64_t v) {
-  v = ((v >> 1) & 0x5555555555555555ull) | ((v & 0x5555555555555555ull) << 1);
-  v = ((v >> 2) & 0x3333333333333333ull) | ((v & 0x3333333333333333ull) << 2);
-  v = ((v >> 4) & 0x0F0F0F0F0F0F0F0Full) | ((v & 0x0F0F0F0F0F0F0F0Full) << 4);
-  return v;
+namespace lczero {
+// Remove ambiguous forward declaration
 }
 
-lczero::V4TrainingData get_v4_training_data(
+// Minimal implementation if not linked (it should be linked from lc0 utils, but to be safe)
+// Actually lc0 has it in utils/bitmanip.h -> utils/bititer.h
+
+lczero::V6TrainingData get_v6_training_data(
         lczero::GameResult game_result, const lczero::PositionHistory& history,
         lczero::Move played_move, lczero::MoveList legal_moves, float Q) {
-  lczero::V4TrainingData result;
+  lczero::V6TrainingData result;
+  std::memset(&result, 0, sizeof(result));
 
-  // Set version.
-  result.version = 4;
+  result.version = 6;
+  // Use Hectoplies format as it is common
+  auto input_format = pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_HECTOPLIES;
+  result.input_format = input_format;
 
-  // Illegal moves will have "-1" probability
+  // Initialize probabilities to -1 (illegal)
   for (auto& probability : result.probabilities) {
-    probability = -1;
+    probability = -1.0f;
   }
 
-  // Populate legal moves with probability "0"
+  // Legal moves to 0
   for (lczero::Move move : legal_moves) {
-    result.probabilities[move.as_nn_index()] = 0;
+    result.probabilities[lczero::MoveToNNIndex(move, 0)] = 0.0f;
   }
 
-  // Assign "1" (100%) to the move that was actually played
-  result.probabilities[played_move.as_nn_index()] = 1.0f;
+  // Played move to 1
+  result.probabilities[lczero::MoveToNNIndex(played_move, 0)] = 1.0f;
 
-  // Populate planes.
-  lczero::InputPlanes planes =
-          EncodePositionForNN(history, 8, lczero::FillEmptyHistory::FEN_ONLY);
-  int plane_idx = 0;
-  for (auto& plane : result.planes) {
-    plane = resever_bits_in_bytes(planes[plane_idx++].mask);
+  // Populate planes
+  int transform = 0;
+  lczero::InputPlanes planes = lczero::EncodePositionForNN(
+      input_format, history, 8, lczero::FillEmptyHistory::FEN_ONLY, &transform);
+
+  // V6 stores first 104 planes (8 history * 13 planes)
+  for (size_t i = 0; i < 104 && i < planes.size(); ++i) {
+    result.planes[i] = planes[i].mask;
   }
 
   const auto& position = history.Last();
-  // Populate castlings.
-  result.castling_us_ooo =
-          position.CanCastle(lczero::Position::WE_CAN_OOO) ? 1 : 0;
-  result.castling_us_oo =
-          position.CanCastle(lczero::Position::WE_CAN_OO) ? 1 : 0;
-  result.castling_them_ooo =
-          position.CanCastle(lczero::Position::THEY_CAN_OOO) ? 1 : 0;
-  result.castling_them_oo =
-          position.CanCastle(lczero::Position::THEY_CAN_OO) ? 1 : 0;
+  const auto& castlings = position.GetBoard().castlings();
 
-  // Other params.
-  result.side_to_move = position.IsBlackToMove() ? 1 : 0;
-  result.move_count = 0;
-  result.rule50_count = position.GetNoCaptureNoPawnPly();
+  // Populate castlings
+  result.castling_us_ooo = castlings.we_can_000() ? 1 : 0;
+  result.castling_us_oo = castlings.we_can_00() ? 1 : 0;
+  result.castling_them_ooo = castlings.they_can_000() ? 1 : 0;
+  result.castling_them_oo = castlings.they_can_00() ? 1 : 0;
 
-  // Game result.
-  if (game_result == lczero::GameResult::WHITE_WON) {
-    result.result = position.IsBlackToMove() ? -1 : 1;
-  } else if (game_result == lczero::GameResult::BLACK_WON) {
-    result.result = position.IsBlackToMove() ? 1 : -1;
-  } else {
-    result.result = 0;
+  // Side to move and enpassant
+  result.side_to_move_or_enpassant = 0;
+  if (!position.GetBoard().en_passant().empty()) {
+      // GetLowestBit returns unsigned long, cast to int for modulus
+      int idx = static_cast<int>(lczero::GetLowestBit(position.GetBoard().en_passant().as_int()));
+      int file = idx % 8;
+      result.side_to_move_or_enpassant = (1 << file);
   }
 
-  // Q for Q+Z training
+  result.invariance_info = 0;
+  if (position.IsBlackToMove()) {
+     result.invariance_info |= (1 << 7);
+  }
+  result.invariance_info |= (transform & 0x7);
+
+  result.rule50_count = position.GetRule50Ply();
+
+  // Result
+  float res_q = 0.0f;
+  if (game_result == lczero::GameResult::WHITE_WON) {
+    res_q = position.IsBlackToMove() ? -1.0f : 1.0f;
+  } else if (game_result == lczero::GameResult::BLACK_WON) {
+    res_q = position.IsBlackToMove() ? 1.0f : -1.0f;
+  }
+  result.result_q = res_q;
+  
+  // Q values
   result.root_q = result.best_q = position.IsBlackToMove() ? -Q : Q;
-  // We have no D information
-  result.root_d = result.best_d = 0.0f;
+  
+  // Set visits to 1 to avoid division by zero or empty checks in training
+  result.visits = 1;
+  
+  result.played_idx = lczero::MoveToNNIndex(played_move, 0);
+  result.best_idx = lczero::MoveToNNIndex(played_move, 0);
 
   return result;
 }
