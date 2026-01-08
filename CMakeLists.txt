@@ -61,17 +61,16 @@ set(CMAKE_BUILD_TYPE Release)
 include_directories(
     "lc0/src"
     "src"
+    "polyglot/src"
     ${ZLIB_INCLUDE}
     "."
 )
 
-# For MSVC, we need polyglot/src in include path to find local files (and local getopt.h)
-# For GCC/MinGW, we use -iquote to allow #include "foo.h" to work but prevent
-# #include <getopt.h> from picking up polyglot/src/getopt.h
-if (MSVC)
-    include_directories("polyglot/src")
-else()
-    add_compile_options("-iquote${CMAKE_CURRENT_SOURCE_DIR}/polyglot/src")
+# For MinGW: pre-define __GETOPT_H__ to prevent polyglot's getopt.h from
+# being used when system unistd.h includes <getopt.h>. This avoids the
+# "undefined reference to getopt_internal" error.
+if (MINGW)
+    add_compile_definitions(__GETOPT_H__)
 endif()
 
 add_compile_definitions(NO_PEXT)
