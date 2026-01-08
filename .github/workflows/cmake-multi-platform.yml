@@ -81,8 +81,11 @@ jobs:
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4.4.3
       with:
-        name: build-artifacts-${{ matrix.os }}-${{ matrix.c_compiler }}
-        path: ${{ steps.strings.outputs.build-output-dir }}
+        name: trainingdata-tool-${{ matrix.os }}-${{ matrix.c_compiler }}
+        path: |
+          ${{ steps.strings.outputs.build-output-dir }}/trainingdata-tool
+          ${{ steps.strings.outputs.build-output-dir }}/trainingdata-tool.exe
+        if-no-files-found: ignore
 
   release:
     needs: build
