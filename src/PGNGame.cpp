@@ -14,15 +14,21 @@ float convert_sf_score_to_win_probability(float score) {
 
 bool extract_lichess_comment_score(const char* comment, float& Q) {
   std::string s(comment);
-  static std::regex rgx("[%eval (-?\\d+(\\.\\d+)?)]");
-  static std::regex rgx2("[%eval #(-?\\d+)]");
+  // Note: brackets must be escaped with \\ in C++ regex strings
+  static std::regex rgx("\\[%eval (-?\\d+(\\.\\d+)?)\\]");
+  static std::regex rgx2("\\[%eval #(-?\\d+)\\]");
   std::smatch matches;
-  if (std::regex_search(s, matches, rgx)) {
-    Q = std::stof(matches[1].str());
-    return true;
-  } else if (std::regex_search(s, matches, rgx2)) {
-    Q = matches[1].str().at(0) == '-' ? -128.0f : 128.0f;
-    return true;
+  try {
+    if (std::regex_search(s, matches, rgx)) {
+      Q = std::stof(matches[1].str());
+      return true;
+    } else if (std::regex_search(s, matches, rgx2)) {
+      Q = matches[1].str().at(0) == '-' ? -128.0f : 128.0f;
+      return true;
+    }
+  } catch (const std::exception& e) {
+    // Failed to parse eval score
+    return false;
   }
   return false;
 }
