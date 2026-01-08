@@ -69,19 +69,27 @@ include_directories(
 add_compile_definitions(NO_PEXT)
 
 # MSVC-specific settings for compatibility with legacy C code in polyglot and lc0 quirks
+# MSVC-specific settings for compatibility with legacy C code in polyglot and lc0 quirks
 if (MSVC)
-    # Disable deprecation warnings for unsafe CRT functions
+    # Disable deprecation warnings for unsafe CRT functions and other noisy warnings
+    # 4996: unsafe function (strcpy vs strcpy_s)
+    # 4267, 4244: conversion loss of data
+    # 4390: empty controlled statement
+    # 4018: signed/unsigned mismatch
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+    add_compile_options(/wd4996 /wd4267 /wd4244 /wd4390 /wd4018)
     
     # Relax conformance mode to allow some legacy C++ constructs
     add_compile_options(/permissive)
     
-    # Allow string literal to char* conversion (needed by polyglot's getopt.h)
-    add_compile_options(/Zc:strictStrings-)
-    
     # Force include <array> because lc0/src/neural/encoder.cc uses std::array but doesn't include it
-    # and we can't modify the submodule file directly.
     add_compile_options(/FIarray)
+
+    # Specific flags for polyglot files to handle const char* conversions
+    # We try to force them to use older C++ standard semantics where possible
+    set_source_files_properties(${polyglot} PROPERTIES 
+        COMPILE_OPTIONS "/Zc:strictStrings-;/permissive"
+    )
 endif()
 
 # TODO: Add tests and install targets if needed.
