@@ -1,7 +1,7 @@
 #ifndef TRAININGDATA_TOOL_V6TRAININGDATAHASHUTIL_H
 #define TRAININGDATA_TOOL_V6TRAININGDATAHASHUTIL_H
 
-#include <boost/functional/hash.hpp>
+#include "utils/hashcat.h"
 #include "trainingdata/trainingdata_v6.h"
 
 #define ARR_LENGTH(a) (sizeof(a) / sizeof(a[0]))
@@ -10,14 +10,19 @@ namespace std {
 template <>
 struct hash<lczero::V6TrainingData> {
   size_t operator()(const lczero::V6TrainingData& k) const {
-    size_t hash = boost::hash_range(k.planes, k.planes + ARR_LENGTH(k.planes));
-    boost::hash_combine(hash, k.castling_us_ooo);
-    boost::hash_combine(hash, k.castling_us_oo);
-    boost::hash_combine(hash, k.castling_them_ooo);
-    boost::hash_combine(hash, k.castling_them_oo);
-    boost::hash_combine(hash, k.side_to_move_or_enpassant);
-    boost::hash_combine(hash, k.rule50_count);
-    return hash;
+    // Hash the planes array using lc0's HashCat
+    uint64_t hash = 0;
+    for (size_t i = 0; i < ARR_LENGTH(k.planes); ++i) {
+      hash = lczero::HashCat(hash, k.planes[i]);
+    }
+    // Combine with other fields
+    hash = lczero::HashCat(hash, k.castling_us_ooo);
+    hash = lczero::HashCat(hash, k.castling_us_oo);
+    hash = lczero::HashCat(hash, k.castling_them_ooo);
+    hash = lczero::HashCat(hash, k.castling_them_oo);
+    hash = lczero::HashCat(hash, k.side_to_move_or_enpassant);
+    hash = lczero::HashCat(hash, k.rule50_count);
+    return static_cast<size_t>(hash);
   }
 };
 

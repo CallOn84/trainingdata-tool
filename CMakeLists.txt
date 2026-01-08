@@ -41,8 +41,6 @@ if (UNIX)
     target_link_libraries(trainingdata-tool -lpthread -lstdc++fs)
 endif(UNIX)
 
-find_package(Boost 1.65.0)
-
 set(CMAKE_BUILD_TYPE Release)
 
 include_directories(
@@ -50,7 +48,6 @@ include_directories(
     "polyglot/src"
     "zlib"
     "."
-    ${Boost_INCLUDE_DIRS}
 )
 
 add_compile_definitions(NO_PEXT)
