@@ -68,4 +68,12 @@ include_directories(
 
 add_compile_definitions(NO_PEXT)
 
+# MSVC-specific settings for compatibility with legacy C code in polyglot
+if (MSVC)
+    # Disable deprecation warnings for unsafe CRT functions
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+    # Allow string literal to char* conversion (needed by polyglot's getopt.h)
+    add_compile_options(/Zc:strictStrings-)
+endif()
+
 # TODO: Add tests and install targets if needed.
