@@ -68,9 +68,10 @@ lczero::Move poly_move_to_lc0_move(move_t move, board_t* board) {
     m = lczero::Move::White(from, to);
   }
 
-  if (colour_is_black(board->turn)) {
-    m.Flip();
-  }
+  // NOTE: Do NOT call m.Flip() for black pieces!
+  // Lc0's board is always kept from white's perspective.
+  // After ApplyMove(), Position::Mirror() is called to switch perspective.
+  // The move must always be from white's perspective (actual board squares).
 
   return m;
 }
