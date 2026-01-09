@@ -35,8 +35,16 @@ bool extract_lichess_comment_score(const char* comment, float& Q) {
 }
 
 lczero::Move poly_move_to_lc0_move(move_t move, board_t* board) {
-  lczero::Square from = lczero::Square::FromIdx(move_from(move));
-  lczero::Square to = lczero::Square::FromIdx(move_to(move));
+  // IMPORTANT: move_from() and move_to() return polyglot 0x88 format squares
+  // lczero::Square::FromIdx() expects 0-63 indices
+  // Use square_to_64() to convert from 0x88 to 0-63
+  int from_0x88 = move_from(move);
+  int to_0x88 = move_to(move);
+  int from_64 = square_to_64(from_0x88);
+  int to_64 = square_to_64(to_0x88);
+  
+  lczero::Square from = lczero::Square::FromIdx(from_64);
+  lczero::Square to = lczero::Square::FromIdx(to_64);
   lczero::Move m;
 
   if (move_is_promote(move)) {
