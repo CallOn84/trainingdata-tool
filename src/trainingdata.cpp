@@ -13,13 +13,14 @@ namespace lczero {
 
 lczero::V6TrainingData get_v6_training_data(
         lczero::GameResult game_result, const lczero::PositionHistory& history,
-        lczero::Move played_move, lczero::MoveList legal_moves, float Q) {
+        lczero::Move played_move, lczero::MoveList legal_moves, float Q,
+        lczero::Move best_move, uint32_t visits) {
   lczero::V6TrainingData result;
   std::memset(&result, 0, sizeof(result));
 
   result.version = 6;
-  // Use Hectoplies format as it is common
-  auto input_format = pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_HECTOPLIES;
+  // Use Classical 112 plane format
+  auto input_format = pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE;
   result.input_format = input_format;
 
   // Initialize probabilities to -1 (illegal)
@@ -57,7 +58,6 @@ lczero::V6TrainingData get_v6_training_data(
   // Side to move and enpassant
   result.side_to_move_or_enpassant = 0;
   if (!position.GetBoard().en_passant().empty()) {
-      // GetLowestBit returns unsigned long, cast to int for modulus
       int idx = static_cast<int>(lczero::GetLowestBit(position.GetBoard().en_passant().as_int()));
       int file = idx % 8;
       result.side_to_move_or_enpassant = (1 << file);
@@ -80,14 +80,14 @@ lczero::V6TrainingData get_v6_training_data(
   }
   result.result_q = res_q;
   
-  // Q values
-  result.root_q = result.best_q = position.IsBlackToMove() ? -Q : Q;
+  // Q values - store directly (relative to side-to-move)
+  result.root_q = result.best_q = Q;
   
-  // Set visits to 1 to avoid division by zero or empty checks in training
-  result.visits = 1;
+  // Set visits
+  result.visits = visits;
   
   result.played_idx = lczero::MoveToNNIndex(played_move, 0);
-  result.best_idx = lczero::MoveToNNIndex(played_move, 0);
+  result.best_idx = lczero::MoveToNNIndex(best_move, 0);
 
   return result;
 }
