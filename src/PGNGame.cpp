@@ -1,4 +1,5 @@
 #include "PGNGame.h"
+#include "StaticEvaluator.h"
 #include "trainingdata.h"
 
 #include <cmath>
@@ -14,44 +15,84 @@ float convert_sf_score_to_win_probability(float score) {
 
 bool extract_lichess_comment_score(const char* comment, float& Q) {
   std::string s(comment);
+  // Note: brackets must be escaped with \\ in C++ regex strings
   static std::regex rgx("\\[%eval (-?\\d+(\\.\\d+)?)\\]");
   static std::regex rgx2("\\[%eval #(-?\\d+)\\]");
   std::smatch matches;
-  if (std::regex_search(s, matches, rgx)) {
-    Q = std::stof(matches[1].str());
-    return true;
-  } else if (std::regex_search(s, matches, rgx2)) {
-    Q = matches[1].str().at(0) == '-' ? -128.0f : 128.0f;
-    return true;
+  try {
+    if (std::regex_search(s, matches, rgx)) {
+      Q = std::stof(matches[1].str());
+      return true;
+    } else if (std::regex_search(s, matches, rgx2)) {
+      Q = matches[1].str().at(0) == '-' ? -128.0f : 128.0f;
+      return true;
+    }
+  } catch (const std::exception& e) {
+    // Failed to parse eval score
+    return false;
   }
   return false;
 }
 
-lczero::Move poly_move_to_lc0_move(move_t move, board_t* board) {
-  lczero::BoardSquare from(square_rank(move_from(move)),
-                           square_file(move_from(move)));
-  lczero::BoardSquare to(square_rank(move_to(move)),
-                         square_file(move_to(move)));
-  lczero::Move m(from, to);
+lczero::Move poly_move_to_lc0_move(move_t move, board_t* board,
+                                   bool is_black_move) {
+  // IMPORTANT: move_from() and move_to() return polyglot 0x88 format squares
+  // lczero::Square::FromIdx() expects 0-63 indices
+  // Use square_to_64() to convert from 0x88 to 0-63
+  int from_0x88 = move_from(move);
+  int to_0x88 = move_to(move);
+  int from_64 = square_to_64(from_0x88);
+  int to_64 = square_to_64(to_0x88);
+
+  lczero::Square from = lczero::Square::FromIdx(from_64);
+  lczero::Square to = lczero::Square::FromIdx(to_64);
+  lczero::Move m;
 
   if (move_is_promote(move)) {
-    lczero::Move::Promotion lookup[5] = {
-        lczero::Move::Promotion::None,   lczero::Move::Promotion::Knight,
-        lczero::Move::Promotion::Bishop, lczero::Move::Promotion::Rook,
-        lczero::Move::Promotion::Queen,
-    };
-    auto prom = lookup[move >> 12];
-    m.SetPromotion(prom);
+    lczero::PieceType prom_type = lczero::kKnight;
+    // Polyglot: 0=None, 1=Kn, 2=Bi, 3=Ro, 4=Qu
+    int promo = (move >> 12) & 7;
+    switch (promo) {
+      case 1:
+        prom_type = lczero::kKnight;
+        break;
+      case 2:
+        prom_type = lczero::kBishop;
+        break;
+      case 3:
+        prom_type = lczero::kRook;
+        break;
+      case 4:
+        prom_type = lczero::kQueen;
+        break;
+    }
+    m = lczero::Move::WhitePromotion(from, to, prom_type);
+    // Need to flip for black moves (except castling)
+    if (is_black_move) {
+      m.Flip();
+    }
   } else if (move_is_castle(move, board)) {
-    bool is_short_castle =
-        square_file(move_from(move)) < square_file(move_to(move));
-    int file_to = is_short_castle ? 6 : 2;
-    m.SetTo(lczero::BoardSquare(square_rank(move_to(move)), file_to));
-    m.SetCastling();
-  }
-
-  if (colour_is_black(board->turn)) {
-    m.Mirror();
+    // For castling, files don't change with perspective, only ranks do
+    // So castling is already in the correct orientation
+    lczero::File rook_file =
+        (to.file().idx > from.file().idx) ? lczero::kFileH : lczero::kFileA;
+    m = lczero::Move::WhiteCastling(from.file(), rook_file);
+    // Don't flip castling moves - they're perspective-independent
+  } else if (move_is_en_passant(move, board)) {
+    m = lczero::Move::WhiteEnPassant(from, to);
+    if (is_black_move) {
+      m.Flip();
+    }
+  } else {
+    m = lczero::Move::White(from, to);
+    // Lc0's board is always kept from white's perspective internally.
+    // After ApplyMove(), Position::Mirror() is called to switch perspective.
+    // When is_black_move is true, the polyglot board is from black's
+    // perspective (after the previous mirror), so we need to flip the move
+    // coordinates to white's perspective before applying it in lc0.
+    if (is_black_move) {
+      m.Flip();
+    }
   }
 
   return m;
@@ -67,8 +108,8 @@ PGNGame::PGNGame(pgn_t* pgn) {
   }
 }
 
-std::vector<lczero::V4TrainingData> PGNGame::getChunks(Options options) const {
-  std::vector<lczero::V4TrainingData> chunks;
+std::vector<lczero::V6TrainingData> PGNGame::getChunks(Options options) const {
+  std::vector<lczero::V6TrainingData> chunks;
   lczero::ChessBoard starting_board;
   std::string starting_fen =
       std::strlen(this->fen) > 0 ? this->fen : lczero::ChessBoard::kStartposFen;
@@ -86,7 +127,7 @@ std::vector<lczero::V4TrainingData> PGNGame::getChunks(Options options) const {
   }
 
   if (options.verbose) {
-    std::cout << "Started new game, starting FEN: \'" << starting_fen << "\'"
+    std::cout << "Started new game, starting FEN: '" << starting_fen << "'"
               << std::endl;
   }
 
@@ -98,24 +139,61 @@ std::vector<lczero::V4TrainingData> PGNGame::getChunks(Options options) const {
   board_from_fen(board, starting_fen.c_str());
 
   lczero::GameResult game_result;
-  if (options.verbose) {
-    std::cout << "Game result: " << this->result << std::endl;
-  }
-  if (my_string_equal(this->result, "1-0")) {
+  if (strcmp(this->result, "1-0") == 0) {
     game_result = lczero::GameResult::WHITE_WON;
-  } else if (my_string_equal(this->result, "0-1")) {
+  } else if (strcmp(this->result, "0-1") == 0) {
     game_result = lczero::GameResult::BLACK_WON;
-  } else {
+  } else if (strcmp(this->result, "1/2-1/2") == 0) {
     game_result = lczero::GameResult::DRAW;
+  } else {
+    game_result = lczero::GameResult::DRAW;  // fallback for unrecognized result
   }
 
   char str[256];
-  for (auto pgn_move : this->moves) {
-    // Extract move from pgn
-    int move = move_from_san(pgn_move.move, board);
+  // Iterate over moves with robust SAN cleaning and safe handling
+  for (size_t i = 0; i < this->moves.size(); ++i) {
+    const auto& pgn_move = this->moves[i];
+
+    // ----- SAN cleaning -------------------------------------------------
+    std::string san = pgn_move.move;
+    // Trim leading/trailing whitespace
+    san.erase(0, san.find_first_not_of(" \t\r\n"));
+    if (!san.empty()) san.erase(san.find_last_not_of(" \t\r\n") + 1);
+    // Remove move numbers like "1.", "23..."
+    size_t dotPos = san.find('.');
+    if (dotPos != std::string::npos) {
+      bool precedingDigits = true;
+      for (size_t j = 0; j < dotPos; ++j) {
+        if (!isdigit(san[j])) {
+          precedingDigits = false;
+          break;
+        }
+      }
+      if (precedingDigits) {
+        san = san.substr(dotPos + 1);
+        san.erase(0, san.find_first_not_of(" \t"));
+      }
+    }
+    // Discard any PGN comment start '{' and everything after it
+    size_t bracePos = san.find('{');
+    if (bracePos != std::string::npos) san = san.substr(0, bracePos);
+    // Remove trailing annotation symbols (!, ?, +, #, =)
+    while (!san.empty() &&
+           (san.back() == '!' || san.back() == '?' || san.back() == '+' ||
+            san.back() == '#' || san.back() == '=')) {
+      san.pop_back();
+    }
+    // Remove trailing period
+    if (!san.empty() && san.back() == '.') san.pop_back();
+    // -------------------------------------------------------------------
+
+    int move = move_from_san(san.c_str(), board);
     if (move == MoveNone || !move_is_legal(move, board)) {
-      std::cout << "illegal move \"" << pgn_move.move << std::endl;
-      break;
+      if (options.verbose) {
+        std::cout << "Skipping illegal move \"" << pgn_move.move
+                  << "\" (parsed as \"" << san << "\")" << std::endl;
+      }
+      continue;
     }
 
     if (options.verbose) {
@@ -128,52 +206,50 @@ std::vector<lczero::V4TrainingData> PGNGame::getChunks(Options options) const {
 
     bool bad_move = false;
     if (pgn_move.nag[0]) {
-      // If the move is bad or dubious, skip it.
-      // See https://en.wikipedia.org/wiki/Numeric_Annotation_Glyphs for PGN
-      // NAGs
       if (pgn_move.nag[0] == '2' || pgn_move.nag[0] == '4' ||
           pgn_move.nag[0] == '5' || pgn_move.nag[0] == '6') {
         bad_move = true;
       }
     }
 
-    // Convert move to lc0 format
-    lczero::Move lc0_move = poly_move_to_lc0_move(move, board);
+    // Determine if it's black's move by checking if the position history
+    // indicates so
+    bool is_black_move = position_history.IsBlackToMove();
+    lczero::Move lc0_move = poly_move_to_lc0_move(move, board, is_black_move);
 
-    bool found = false;
     auto legal_moves = position_history.Last().GetBoard().GenerateLegalMoves();
-    for (auto legal : legal_moves) {
-      if (legal == lc0_move && legal.castling() == lc0_move.castling()) {
-        found = true;
-        break;
-      }
-    }
-    if (!found) {
-      std::cout << "Move not found: " << pgn_move.move << " "
-                << square_file(move_to(move)) << std::endl;
-    }
 
-    // Extract SF scores and convert to win probability
+    // Extract scores and convert to win probability
     float Q = 0.0f;
     if (options.lichess_mode) {
       if (pgn_move.comment[0]) {
         float lichess_score;
         bool success =
             extract_lichess_comment_score(pgn_move.comment, lichess_score);
-        if (!success) {
-          break;  // Comment contained no "%eval"
+        if (success) {
+          Q = convert_sf_score_to_win_probability(lichess_score);
+        } else if (options.verbose) {
+          std::cout << "Skipping Lichess eval for move \"" << pgn_move.move
+                    << "\" – no %eval found" << std::endl;
         }
-        Q = convert_sf_score_to_win_probability(lichess_score);
-      } else {
-        // This game has no comments, skip it.
-        break;
+      } else if (options.verbose) {
+        std::cout << "No Lichess comment for move \"" << pgn_move.move
+                  << "\" – skipping eval" << std::endl;
+      }
+    } else {
+      // Normal mode: use static evaluation
+      int cp = StaticEvaluator::evaluate(board);
+      Q = StaticEvaluator::cpToWinProbability(cp);
+      if (options.verbose) {
+        std::cout << "Static eval: " << cp << " cp, Q=" << Q << std::endl;
       }
     }
 
     if (!(bad_move && options.lichess_mode)) {
       // Generate training data
-      lczero::V4TrainingData chunk = get_v4_training_data(
-          game_result, position_history, lc0_move, legal_moves, Q);
+      // For non-Stockfish mode, best_move = played_move, visits = 1
+      lczero::V6TrainingData chunk = get_v6_training_data(
+          game_result, position_history, lc0_move, legal_moves, Q, lc0_move, 1);
       chunks.push_back(chunk);
       if (options.verbose) {
         std::string result;
@@ -191,8 +267,8 @@ std::vector<lczero::V4TrainingData> PGNGame::getChunks(Options options) const {
             result = "???";
             break;
         }
-        std::cout << "Write chunk: [" << lc0_move.as_string() << ", " << result
-                  << ", " << Q << "]\n";
+        std::cout << "Write chunk: [" << lc0_move.ToString(false) << ", "
+                  << result << ", " << Q << "]\n";
       }
     }
 

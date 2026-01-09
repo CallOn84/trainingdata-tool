@@ -3,10 +3,11 @@
 
 #include "neural/encoder.h"
 #include "neural/network.h"
-#include "neural/writer.h"
+#include "trainingdata/trainingdata_v6.h"
 
-lczero::V4TrainingData get_v4_training_data(
+lczero::V6TrainingData get_v6_training_data(
         lczero::GameResult game_result, const lczero::PositionHistory& history,
-        lczero::Move played_move, lczero::MoveList legal_moves, float Q);
+        lczero::Move played_move, lczero::MoveList legal_moves, float Q,
+        lczero::Move best_move, uint32_t visits);
 
 #endif

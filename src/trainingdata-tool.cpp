@@ -16,6 +16,7 @@ int64_t max_games_to_convert = 10000000;
 size_t chunks_per_file = 4096;
 size_t dedup_uniq_buffersize = 50000;
 float dedup_q_ratio = 1.0f;
+std::string output_prefix = "supervised-";
 
 inline bool file_exists(const std::string &name) {
   auto s = std::filesystem::status(name);
@@ -27,11 +28,12 @@ inline bool directory_exists(const std::string &name) {
   return std::filesystem::is_directory(s);
 }
 
-void convert_games(const std::string &pgn_file_name, Options options) {
+void convert_games(const std::string &pgn_file_name, Options options,
+                   const std::string &prefix) {
   int game_id = 0;
   pgn_t pgn[1];
   pgn_open(pgn, pgn_file_name.c_str());
-  TrainingDataWriter writer(max_files_per_directory, chunks_per_file);
+  TrainingDataWriter writer(max_files_per_directory, chunks_per_file, prefix);
   while (pgn_next_game(pgn) && game_id < max_games_to_convert) {
     PGNGame game(pgn);
     writer.EnqueueChunks(game.getChunks(options));
@@ -86,10 +88,14 @@ int main(int argc, char *argv[]) {
       dedup_q_ratio = std::stof(argv[idx + 1]);
       std::cout << "Deduplication Q ratio set to: " << dedup_q_ratio
                 << std::endl;
+    } else if (0 == static_cast<std::string>("-output").compare(argv[idx])) {
+      output_prefix = argv[idx + 1];
+      std::cout << "Output prefix set to: " << output_prefix << std::endl;
     }
   }
 
-  TrainingDataWriter writer(max_files_per_directory, chunks_per_file, "deduped-");
+  TrainingDataWriter writer(max_files_per_directory, chunks_per_file,
+                            "deduped-");
   for (size_t idx = 1; idx < argc; ++idx) {
     if (deduplication_mode) {
       if (!directory_exists(argv[idx])) continue;
@@ -98,9 +104,9 @@ int main(int argc, char *argv[]) {
     } else {
       if (!file_exists(argv[idx])) continue;
       if (options.verbose) {
-        std::cout << "Opening \'" << argv[idx] << "\'" << std::endl;
+        std::cout << "Opening '" << argv[idx] << "'" << std::endl;
       }
-      convert_games(argv[idx], options);
+      convert_games(argv[idx], options, output_prefix);
     }
   }
 }
