@@ -78,11 +78,13 @@ lczero::Move poly_move_to_lc0_move(move_t move, board_t* board,
         (to.file().idx > from.file().idx) ? lczero::kFileH : lczero::kFileA;
     m = lczero::Move::WhiteCastling(from.file(), rook_file);
     // Don't flip castling moves - they're perspective-independent
-    if (move_is_en_passant(move, board)) {
-      m = lczero::Move::WhiteEnPassant(from, to);
-    } else {
-      m = lczero::Move::White(from, to);
+  } else if (move_is_en_passant(move, board)) {
+    m = lczero::Move::WhiteEnPassant(from, to);
+    if (is_black_move) {
+      m.Flip();
     }
+  } else {
+    m = lczero::Move::White(from, to);
     // Lc0's board is always kept from white's perspective internally.
     // After ApplyMove(), Position::Mirror() is called to switch perspective.
     // When is_black_move is true, the polyglot board is from black's

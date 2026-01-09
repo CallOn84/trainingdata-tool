@@ -81,18 +81,33 @@ lczero::V6TrainingData get_v6_training_data(
 
   // Result
   float res_q = 0.0f;
+  float res_d = 1.0f; // Default to draw
   if (game_result == lczero::GameResult::WHITE_WON) {
     res_q = position.IsBlackToMove() ? -1.0f : 1.0f;
+    res_d = 0.0f;
   } else if (game_result == lczero::GameResult::BLACK_WON) {
     res_q = position.IsBlackToMove() ? 1.0f : -1.0f;
+    res_d = 0.0f;
   }
   result.result_q = res_q;
+  result.result_d = res_d;
 
   // Q values - store directly (relative to side-to-move)
   result.root_q = result.best_q = Q;
+  result.root_d = result.best_d = 0.0f; // Static eval doesn't provide D
+
+  // Set played move stats
+  result.played_q = Q;
+  result.played_d = 0.0f;
+  result.played_m = 0.0f;
+  result.root_m = 0.0f;
+  result.best_m = 0.0f;
 
   // Set visits
   result.visits = visits;
+
+  // Set policy KLD to neutral
+  result.policy_kld = 0.0f;
 
   // Use the already-validated played_idx (or 0 if invalid)
   result.played_idx = (played_idx < 1858) ? played_idx : 0;
