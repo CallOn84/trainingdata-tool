@@ -1,4 +1,5 @@
 #include "PGNGame.h"
+#include "StaticEvaluator.h"
 #include "trainingdata.h"
 
 #include <cmath>
@@ -180,7 +181,7 @@ std::vector<lczero::V6TrainingData> PGNGame::getChunks(Options options) const {
 
     auto legal_moves = position_history.Last().GetBoard().GenerateLegalMoves();
 
-    // Extract SF scores and convert to win probability
+    // Extract scores and convert to win probability
     float Q = 0.0f;
     if (options.lichess_mode) {
       if (pgn_move.comment[0]) {
@@ -194,6 +195,13 @@ std::vector<lczero::V6TrainingData> PGNGame::getChunks(Options options) const {
         }
       } else if (options.verbose) {
         std::cout << "No Lichess comment for move \"" << pgn_move.move << "\" – skipping eval" << std::endl;
+      }
+    } else {
+      // Normal mode: use static evaluation
+      int cp = StaticEvaluator::evaluate(board);
+      Q = StaticEvaluator::cpToWinProbability(cp);
+      if (options.verbose) {
+        std::cout << "Static eval: " << cp << " cp, Q=" << Q << std::endl;
       }
     }
 
